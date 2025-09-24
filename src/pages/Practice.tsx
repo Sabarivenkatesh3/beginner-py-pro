@@ -29,15 +29,33 @@ const Practice = () => {
     },
   ];
 
-  // Load Pyodide and initialize codes
   useEffect(() => {
     const initPyodide = async () => {
       try {
         const pyodideInstance = await loadPyodide({
           indexURL: "https://cdn.jsdelivr.net/pyodide/v0.26.2/full/",
         });
+
+        // Setup for capturing stdout and errors
+        await pyodideInstance.runPythonAsync(`
+import sys, traceback
+
+class CaptureIO:
+    def __init__(self):
+        self.logs = []
+    def write(self, s):
+        if s.strip() != "":
+            self.logs.append(s)
+    def flush(self):
+        pass
+
+sys.stdout = CaptureIO()
+sys.stderr = CaptureIO()
+        `);
+
         setPyodide(pyodideInstance);
 
+        // Initialize codes from starter templates
         const initialCodes = problems.reduce(
           (acc, p) => ({ ...acc, [p.id]: p.starterCode }),
           {}
@@ -49,31 +67,37 @@ const Practice = () => {
         setLoading(false);
       }
     };
+
     initPyodide();
   }, []);
 
-  // Run Python code
   const runCode = async (code: string, id: number) => {
     if (!pyodide) return;
     try {
-      let output = "";
-      pyodide.setStdout({
-        batched: (msg) => (output += msg + "\n"),
-      });
-      pyodide.setStderr({
-        batched: (msg) => (output += "Error: " + msg + "\n"),
-      });
+      // Reset logs
+      await pyodide.runPythonAsync(`sys.stdout.logs = []; sys.stderr.logs = []`);
 
-      await pyodide.runPythonAsync(code);
+      // Wrap user code in try/except to capture Python errors
+      await pyodide.runPythonAsync(`
+import traceback
+try:
+    exec(${JSON.stringify(code)})
+except Exception:
+    sys.stderr.logs.append(traceback.format_exc())
+      `);
+
+      // Collect logs
+      const logs = await pyodide.runPythonAsync(`"\\n".join(sys.stdout.logs)`);
+      const errors = await pyodide.runPythonAsync(`"\\n".join(sys.stderr.logs)`);
 
       setOutputs((prev) => ({
         ...prev,
-        [id]: output.trim() || "✅ Code ran successfully (no output)",
+        [id]: errors ? `❌ Error:\n${errors}` : logs || "✅ Code ran successfully (no output)",
       }));
     } catch (err: any) {
       setOutputs((prev) => ({
         ...prev,
-        [id]: `Error: ${err.message}`,
+        [id]: `⚠️ Runtime Error: ${err.message}`,
       }));
     }
   };
@@ -109,7 +133,7 @@ const Practice = () => {
 
               <div className="mt-2">
                 <strong>Output:</strong>
-                <pre className="bg-gray-100 p-2 rounded">
+                <pre className="bg-gray-100 p-2 rounded whitespace-pre-wrap">
                   {outputs[problem.id] || "No output yet."}
                 </pre>
               </div>
