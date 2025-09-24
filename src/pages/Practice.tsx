@@ -1,175 +1,153 @@
-import { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import Editor from "@monaco-editor/react";
-import { loadPyodide, PyodideInterface } from "pyodide";
-import { createClient } from "@supabase/supabase-js";
 
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL!,
-  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY!  // 👈 fix here
-);
-
-interface Problem {
+interface PracticeProblem {
   id: string;
   title: string;
   description: string;
   starter_code: string;
   solution: string;
-  test_cases: { input: any; expected_output: any }[];
+  test_cases: { input: any; expected: any }[];
+  difficulty: string;
 }
 
 const Practice = () => {
-  const [pyodide, setPyodide] = useState<PyodideInterface | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [outputs, setOutputs] = useState<{ [key: string]: string }>({});
-  const [problems, setProblems] = useState<Problem[]>([]);
-  const [completed, setCompleted] = useState<string[]>([]);
-  const [userId, setUserId] = useState<string | null>(null);
+  const [problems, setProblems] = useState<PracticeProblem[]>([]);
+  const [selectedProblem, setSelectedProblem] = useState<PracticeProblem | null>(null);
+  const [code, setCode] = useState("");
+  const [output, setOutput] = useState("");
+  const [pyodide, setPyodide] = useState<any>(null);
 
+  // Load problems
   useEffect(() => {
-    const fetchUser = async () => {
-      const { data, error } = await supabase.auth.getUser();
-      if (!error && data?.user) {
-        setUserId(data.user.id);
-      }
-    };
-    fetchUser();
-  }, []);
-
-  useEffect(() => {
-    const fetchProblems = async () => {
-      const { data, error } = await supabase
-        .from("practice_problems")
-        .select("*")
-        .order("order_number", { ascending: true });
-
-      if (!error && data) {
-        setProblems(
-          data.map((p: any) => ({
-            ...p,
-            test_cases: JSON.parse(p.test_cases),
-          }))
-        );
-      }
-    };
-
-    const fetchProgress = async () => {
-      if (!userId) return;
-      const { data } = await supabase
-        .from("practice_submissions")
-        .select("problem_id, passed")
-        .eq("user_id", userId);
-
-      if (data) {
-        setCompleted(
-          data.filter((p: any) => p.passed).map((p: any) => p.problem_id)
-        );
-      }
-    };
-
-    fetchProblems();
-    fetchProgress();
-  }, [userId]);
-
-  useEffect(() => {
-    const initPyodide = async () => {
-      try {
-        const pyodideInstance = await loadPyodide({
-          indexURL: "https://cdn.jsdelivr.net/pyodide/v0.26.2/full/",
-        });
-        setPyodide(pyodideInstance);
-      } catch (error) {
-        console.error("Failed to load Pyodide:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    initPyodide();
-  }, []);
-
-  const runCode = async (code: string, problem: Problem) => {
-    if (!pyodide || !userId) return;
-    try {
-      let allPassed = true;
-      let resultLogs: string[] = [];
-
-      for (const tc of problem.test_cases) {
-        pyodide.runPython(code);
-        let fnName = problem.starter_code.split("(")[0].replace("def ", "").trim();
-        let pyResult = pyodide.runPython(
-          `${fnName}(*${JSON.stringify(tc.input)})`
-        );
-        let passed = pyResult === tc.expected_output;
-
-        resultLogs.push(
-          `Input: ${tc.input} | Expected: ${tc.expected_output} | Got: ${pyResult} | ${
-            passed ? "✅" : "❌"
-          }`
-        );
-
-        if (!passed) allPassed = false;
-      }
-
-      setOutputs((prev) => ({ ...prev, [problem.id]: resultLogs.join("\n") }));
-
-      // save submission
-      await supabase.from("practice_submissions").insert({
-        user_id: userId,
-        problem_id: problem.id,
-        code,
-        result: resultLogs,
-        passed: allPassed,
+  const loadPyodideInstance = async () => {
+    if ((window as any).loadPyodide) {
+      const py = await (window as any).loadPyodide({
+        indexURL: "https://cdn.jsdelivr.net/pyodide/v0.23.4/full/",
       });
+      setPyodide(py);
+    } else {
+      console.error("Pyodide script not loaded. Check index.html script tag.");
+    }
+  };
+  loadPyodideInstance();
+  }, []);
 
-      if (allPassed && !completed.includes(problem.id)) {
-        setCompleted((prev) => [...prev, problem.id]);
+
+  // Load Pyodide
+  useEffect(() => {
+    const loadPyodide = async () => {
+      // @ts-ignore
+      const py = await window.loadPyodide();
+      setPyodide(py);
+    };
+    loadPyodide();
+  }, []);
+
+  // Run Code with test cases + stdout capture
+  const runCode = async () => {
+    if (!pyodide || !selectedProblem) return;
+    try {
+      setOutput("Running...");
+
+      // Capture stdout
+      await pyodide.runPythonAsync(`
+import sys
+from io import StringIO
+sys.stdout = StringIO()
+`);
+
+      // Load user code
+      await pyodide.runPythonAsync(code);
+
+      let testResults: string[] = [];
+      const cases = (selectedProblem.test_cases as any[]) || [];
+
+      for (const tc of cases) {
+        const { input, expected } = tc;
+        try {
+          // call function dynamically by problem title
+          const funcName = selectedProblem.title.toLowerCase().replace(/\s+/g, "_");
+          const args = Array.isArray(input) ? input.join(",") : input;
+          const pyResult = await pyodide.runPythonAsync(`${funcName}(${args})`);
+
+          if (String(pyResult) === String(expected)) {
+            testResults.push(`✅ Passed: input ${JSON.stringify(input)}`);
+          } else {
+            testResults.push(
+              `❌ Failed: input ${JSON.stringify(input)}, expected ${expected}, got ${pyResult}`
+            );
+          }
+        } catch (err: any) {
+          testResults.push(`❌ Error on input ${JSON.stringify(input)}: ${err.message}`);
+        }
       }
+
+      // Get printed output
+      const printed = await pyodide.runPythonAsync("sys.stdout.getvalue()");
+
+      setOutput(testResults.join("\n") + "\n\nProgram output:\n" + printed);
     } catch (err: any) {
-      setOutputs((prev) => ({ ...prev, [problem.id]: `Error: ${err.message}` }));
+      setOutput("Error: " + err.message);
     }
   };
 
-  if (loading) return <p className="text-center">⏳ Loading Python runtime...</p>;
-
-  if (!userId)
-    return <p className="text-center">🔑 Please sign in to track progress.</p>;
-
   return (
-    <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold text-center mb-8">
-        Python Practice Problems
-      </h1>
+    <div className="p-6">
+      <h1 className="text-2xl font-bold mb-4">Python Practice Problems</h1>
+      <div className="grid gap-4 md:grid-cols-2">
+        {problems.map((problem) => (
+          <Card key={problem.id}>
+            <CardHeader>
+              <CardTitle>{problem.title}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p>{problem.description}</p>
+              <Button
+                className="mt-4"
+                onClick={() => {
+                  setSelectedProblem(problem);
+                  setCode(problem.starter_code || "");
+                  setOutput("");
+                }}
+              >
+                Solve
+              </Button>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
 
-      {problems.map((problem) => (
-        <div key={problem.id} className="mb-12 p-6 border rounded-lg shadow">
-          <h2 className="text-xl font-semibold mb-2">{problem.title}</h2>
-          <p className="mb-4">{problem.description}</p>
+      {selectedProblem && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg w-full max-w-4xl p-6">
+            <h2 className="text-xl font-bold mb-2">{selectedProblem.title}</h2>
+            <p className="mb-4">{selectedProblem.description}</p>
 
-          <Editor
-            height="200px"
-            defaultLanguage="python"
-            defaultValue={problem.starter_code}
-            onChange={(value) => (problem.starter_code = value || "")}
-          />
+            <Editor
+              height="300px"
+              defaultLanguage="python"
+              value={code}
+              onChange={(val) => setCode(val || "")}
+              theme="vs-dark"
+            />
 
-          <button
-            className="mt-3 px-4 py-2 bg-primary text-white rounded"
-            onClick={() => runCode(problem.starter_code, problem)}
-          >
-            Run Code
-          </button>
+            <div className="mt-4 flex gap-2">
+              <Button onClick={runCode}>Run Code</Button>
+              <Button variant="secondary" onClick={() => setSelectedProblem(null)}>
+                Close
+              </Button>
+            </div>
 
-          {completed.includes(problem.id) && (
-            <span className="ml-3 text-green-600 font-semibold">✔ Completed</span>
-          )}
-
-          <div className="mt-2">
-            <strong>Output:</strong>
-            <pre className="bg-gray-100 p-2 rounded">
-              {outputs[problem.id] || "No output yet."}
+            <pre className="bg-gray-100 p-4 mt-4 rounded text-sm whitespace-pre-wrap">
+              {output}
             </pre>
           </div>
         </div>
-      ))}
+      )}
     </div>
   );
 };

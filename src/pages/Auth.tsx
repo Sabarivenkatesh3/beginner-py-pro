@@ -8,6 +8,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/components/AuthProvider';
 import { toast } from 'sonner';
 import { z } from 'zod';
+import { createClient } from '@supabase/supabase-js';
+
+const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL!,
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY!
+);
 
 const authSchema = z.object({
   email: z.string().email('Invalid email address'),
@@ -18,7 +24,7 @@ const Auth = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const { signIn, signUp, user } = useAuth();
+  const { signIn, user } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -27,9 +33,10 @@ const Auth = () => {
     }
   }, [user, navigate]);
 
+  // ✅ Sign In
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     try {
       authSchema.parse({ email, password });
     } catch (error) {
@@ -40,22 +47,23 @@ const Auth = () => {
     }
 
     setIsLoading(true);
-    
+
     const { error } = await signIn(email, password);
-    
+
     if (error) {
       toast.error(error.message || 'Sign in failed');
     } else {
       toast.success('Signed in successfully!');
       navigate('/');
     }
-    
+
     setIsLoading(false);
   };
 
+  // ✅ Sign Up (direct supabase)
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     try {
       authSchema.parse({ email, password });
     } catch (error) {
@@ -66,9 +74,12 @@ const Auth = () => {
     }
 
     setIsLoading(true);
-    
-    const { error } = await signUp(email, password);
-    
+
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+    });
+
     if (error) {
       if (error.message?.includes('already registered')) {
         toast.error('This email is already registered. Please sign in instead.');
@@ -76,9 +87,18 @@ const Auth = () => {
         toast.error(error.message || 'Sign up failed');
       }
     } else {
+      const user = data?.user;
+      if (user) {
+        await supabase.from('profiles').insert({
+          user_id: user.id,
+          display_name: user.email,
+          skill_level: 1, // default beginner
+        });
+      }
+
       toast.success('Check your email to confirm your account!');
     }
-    
+
     setIsLoading(false);
   };
 
@@ -97,7 +117,8 @@ const Auth = () => {
               <TabsTrigger value="signin">Sign In</TabsTrigger>
               <TabsTrigger value="signup">Sign Up</TabsTrigger>
             </TabsList>
-            
+
+            {/* Sign In Tab */}
             <TabsContent value="signin" className="space-y-4">
               <form onSubmit={handleSignIn} className="space-y-4">
                 <div className="space-y-2">
@@ -127,7 +148,8 @@ const Auth = () => {
                 </Button>
               </form>
             </TabsContent>
-            
+
+            {/* Sign Up Tab */}
             <TabsContent value="signup" className="space-y-4">
               <form onSubmit={handleSignUp} className="space-y-4">
                 <div className="space-y-2">
