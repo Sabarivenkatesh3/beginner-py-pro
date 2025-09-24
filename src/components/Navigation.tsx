@@ -8,11 +8,14 @@ import {
   MessageCircle, 
   Menu, 
   X,
-  User
+  User,
+  LogOut
 } from "lucide-react";
+import { useAuth } from "./AuthProvider";
 
 const Navigation = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const { user, signOut } = useAuth();
 
   const navItems = [
     { to: "/", label: "Home", icon: BookOpen },
@@ -56,13 +59,31 @@ const Navigation = () => {
 
           {/* Auth Buttons */}
           <div className="hidden md:flex items-center space-x-2">
-            <Button variant="ghost" size="sm">
-              <User className="h-4 w-4 mr-2" />
-              Sign In
-            </Button>
-            <Button size="sm" className="gradient-primary">
-              Get Started
-            </Button>
+            {user ? (
+              <>
+                <span className="text-sm text-muted-foreground">
+                  {user.email}
+                </span>
+                <Button variant="ghost" size="sm" onClick={signOut}>
+                  <LogOut className="h-4 w-4 mr-2" />
+                  Sign Out
+                </Button>
+              </>
+            ) : (
+              <>
+                <NavLink to="/auth">
+                  <Button variant="ghost" size="sm">
+                    <User className="h-4 w-4 mr-2" />
+                    Sign In
+                  </Button>
+                </NavLink>
+                <NavLink to="/auth">
+                  <Button size="sm" className="gradient-primary">
+                    Get Started
+                  </Button>
+                </NavLink>
+              </>
+            )}
           </div>
 
           {/* Mobile Menu Button */}
@@ -96,13 +117,31 @@ const Navigation = () => {
                 </NavLink>
               ))}
               <div className="pt-4 border-t space-y-2">
-                <Button variant="ghost" size="sm" className="w-full justify-start">
-                  <User className="h-4 w-4 mr-2" />
-                  Sign In
-                </Button>
-                <Button size="sm" className="w-full gradient-primary">
-                  Get Started
-                </Button>
+                {user ? (
+                  <>
+                    <div className="px-3 py-2 text-sm text-muted-foreground">
+                      {user.email}
+                    </div>
+                    <Button variant="ghost" size="sm" className="w-full justify-start" onClick={signOut}>
+                      <LogOut className="h-4 w-4 mr-2" />
+                      Sign Out
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <NavLink to="/auth" onClick={() => setIsMenuOpen(false)}>
+                      <Button variant="ghost" size="sm" className="w-full justify-start">
+                        <User className="h-4 w-4 mr-2" />
+                        Sign In
+                      </Button>
+                    </NavLink>
+                    <NavLink to="/auth" onClick={() => setIsMenuOpen(false)}>
+                      <Button size="sm" className="w-full gradient-primary">
+                        Get Started
+                      </Button>
+                    </NavLink>
+                  </>
+                )}
               </div>
             </div>
           </div>
