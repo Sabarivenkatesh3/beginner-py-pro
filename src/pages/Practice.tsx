@@ -6,91 +6,111 @@ const Practice = () => {
   const [pyodide, setPyodide] = useState<PyodideInterface | null>(null);
   const [loading, setLoading] = useState(true);
   const [outputs, setOutputs] = useState<{ [key: number]: string }>({});
+  const [codes, setCodes] = useState<{ [key: number]: string }>({});
 
   const problems = [
     {
       id: 1,
       title: "Hello World",
       description: "Write a program that prints 'Hello, World!' to the console.",
-      starterCode: `def hello_world():\n    # Write your code here\n    pass`,
+      starterCode: `def hello_world():\n    print("Hello, World!")\n\nhello_world()`,
     },
     {
       id: 2,
       title: "Simple Calculator",
       description: "Create a function that adds two numbers together.",
-      starterCode: `def add_numbers(a, b):\n    # Return the sum of a and b\n    pass`,
+      starterCode: `def add_numbers(a, b):\n    return a + b\n\nprint(add_numbers(5, 3))`,
     },
     {
       id: 3,
       title: "Even or Odd",
       description: "Write a function that determines if a number is even or odd.",
-      starterCode: `def is_even(number):\n    # Return True if even, False if odd\n    pass`,
+      starterCode: `def is_even(number):\n    if number % 2 == 0:\n        return True\n    return False\n\nprint(is_even(4))`,
     },
   ];
 
+  // Initialize Pyodide once
   useEffect(() => {
-  const initPyodide = async () => {
-    try {
-      const pyodideInstance = await loadPyodide({
-        indexURL: "https://cdn.jsdelivr.net/pyodide/v0.26.2/full/",
-      });
-      setPyodide(pyodideInstance);
-    } catch (error) {
-      console.error("Failed to load Pyodide:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-  initPyodide();
+    const initPyodide = async () => {
+      try {
+        const pyodideInstance = await loadPyodide({
+          indexURL: "https://cdn.jsdelivr.net/pyodide/v0.26.2/full/",
+        });
+        setPyodide(pyodideInstance);
+
+        // Initialize codes with starterCode
+        const initialCodes = problems.reduce(
+          (acc, p) => ({ ...acc, [p.id]: p.starterCode }),
+          {}
+        );
+        setCodes(initialCodes);
+      } catch (error) {
+        console.error("Failed to load Pyodide:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    initPyodide();
   }, []);
 
-
-
   const runCode = async (code: string, id: number) => {
-  if (!pyodide) return;
-  try {
-    let output = "";
-    pyodide.setStdout({
-      batched: (msg) => {
-        output += msg + "\n";
-      },
-    });
-    pyodide.setStderr({
-      batched: (msg) => {
-        output += "Error: " + msg + "\n";
-      },
-    });
-    await pyodide.runPythonAsync(code);
-    setOutputs((prev) => ({ ...prev, [id]: output || "✅ Code ran successfully (no output)" }));
-  } catch (err: any) {
-    setOutputs((prev) => ({ ...prev, [id]: `Error: ${err.message}` }));
-  }
-  };
+    if (!pyodide) return;
+    try {
+      let output = "";
 
+      // Capture stdout & stderr
+      pyodide.setStdout({
+        batched: (msg) => {
+          output += msg + "\n";
+        },
+      });
+      pyodide.setStderr({
+        batched: (msg) => {
+          output += "Error: " + msg + "\n";
+        },
+      });
+
+      await pyodide.runPythonAsync(code);
+
+      setOutputs((prev) => ({
+        ...prev,
+        [id]: output || "✅ Code ran successfully (no output)",
+      }));
+    } catch (err: any) {
+      setOutputs((prev) => ({ ...prev, [id]: `Error: ${err.message}` }));
+    }
+  };
 
   return (
     <div className="min-h-screen bg-background">
       <div className="container mx-auto px-4 py-8">
-        <h1 className="text-3xl font-bold text-center mb-8">Python Practice Problems</h1>
+        <h1 className="text-3xl font-bold text-center mb-8">
+          Python Practice Problems
+        </h1>
 
         {loading ? (
           <p className="text-center">⏳ Loading Python runtime...</p>
         ) : (
           problems.map((problem) => (
-            <div key={problem.id} className="mb-12 p-6 border rounded-lg shadow">
+            <div
+              key={problem.id}
+              className="mb-12 p-6 border rounded-lg shadow"
+            >
               <h2 className="text-xl font-semibold mb-2">{problem.title}</h2>
               <p className="mb-4">{problem.description}</p>
 
               <Editor
                 height="200px"
                 defaultLanguage="python"
-                defaultValue={problem.starterCode}
-                onChange={(value) => (problem.starterCode = value || "")}
+                value={codes[problem.id]}
+                onChange={(value) =>
+                  setCodes((prev) => ({ ...prev, [problem.id]: value || "" }))
+                }
               />
 
               <button
                 className="mt-3 px-4 py-2 bg-primary text-white rounded"
-                onClick={() => runCode(problem.starterCode, problem.id)}
+                onClick={() => runCode(codes[problem.id], problem.id)}
               >
                 Run Code
               </button>
