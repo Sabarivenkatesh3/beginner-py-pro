@@ -20,6 +20,17 @@ const Lessons = () => {
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [loading, setLoading] = useState(true);
   const [completed, setCompleted] = useState<string[]>([]);
+  const [userId, setUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      const { data, error } = await supabase.auth.getUser();
+      if (!error && data?.user) {
+        setUserId(data.user.id);
+      }
+    };
+    fetchUser();
+  }, []);
 
   useEffect(() => {
     const fetchLessons = async () => {
@@ -33,26 +44,23 @@ const Lessons = () => {
     };
 
     const fetchProgress = async () => {
+      if (!userId) return;
       const { data } = await supabase
         .from("lesson_progress")
-        .select("lesson_id, completed")
-        .eq("user_id", "demo-user"); // TODO: replace with auth user id
-
-      if (data) {
-        const completedLessons = data
-          .filter((p: any) => p.completed)
-          .map((p: any) => p.lesson_id);
-        setCompleted(completedLessons);
-      }
+        .select("lesson_id")
+        .eq("user_id", userId);
+      if (data) setCompleted(data.map((p: any) => p.lesson_id));
     };
 
     fetchLessons();
     fetchProgress();
-  }, []);
+  }, [userId]);
 
   const markCompleted = async (lessonId: string) => {
-    const { error } = await supabase.from("lesson_progress").upsert({
-      user_id: "demo-user", // TODO: replace with auth user
+    if (!userId) return;
+
+    const { error } = await supabase.from("lesson_progress").insert({
+      user_id: userId,
       lesson_id: lessonId,
       completed: true,
       completed_at: new Date().toISOString(),
@@ -62,6 +70,9 @@ const Lessons = () => {
   };
 
   if (loading) return <p className="text-center">Loading lessons...</p>;
+
+  if (!userId)
+    return <p className="text-center">🔑 Please sign in to track progress.</p>;
 
   return (
     <div className="container mx-auto px-4 py-8">

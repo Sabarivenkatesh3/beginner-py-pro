@@ -3,7 +3,6 @@ import Editor from "@monaco-editor/react";
 import { loadPyodide, PyodideInterface } from "pyodide";
 import { createClient } from "@supabase/supabase-js";
 
-// Supabase client
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL!,
   import.meta.env.VITE_SUPABASE_ANON_KEY!
@@ -24,9 +23,18 @@ const Practice = () => {
   const [outputs, setOutputs] = useState<{ [key: string]: string }>({});
   const [problems, setProblems] = useState<Problem[]>([]);
   const [completed, setCompleted] = useState<string[]>([]);
-  const [codeMap, setCodeMap] = useState<{ [key: string]: string }>({});
+  const [userId, setUserId] = useState<string | null>(null);
 
-  // Load practice problems
+  useEffect(() => {
+    const fetchUser = async () => {
+      const { data, error } = await supabase.auth.getUser();
+      if (!error && data?.user) {
+        setUserId(data.user.id);
+      }
+    };
+    fetchUser();
+  }, []);
+
   useEffect(() => {
     const fetchProblems = async () => {
       const { data, error } = await supabase
@@ -35,40 +43,33 @@ const Practice = () => {
         .order("order_number", { ascending: true });
 
       if (!error && data) {
-        const mapped = data.map((p: any) => ({
-          ...p,
-          test_cases: JSON.parse(p.test_cases),
-        }));
-        setProblems(mapped);
-
-        // Initialize codeMap with starter code
-        const initialCode: { [key: string]: string } = {};
-        mapped.forEach((p: Problem) => {
-          initialCode[p.id] = p.starter_code;
-        });
-        setCodeMap(initialCode);
+        setProblems(
+          data.map((p: any) => ({
+            ...p,
+            test_cases: JSON.parse(p.test_cases),
+          }))
+        );
       }
     };
 
-    const fetchSubmissions = async () => {
+    const fetchProgress = async () => {
+      if (!userId) return;
       const { data } = await supabase
         .from("practice_submissions")
         .select("problem_id, passed")
-        .eq("user_id", "demo-user"); // TODO: replace with real auth user_id
+        .eq("user_id", userId);
 
       if (data) {
-        const solved = data
-          .filter((s: any) => s.passed)
-          .map((s: any) => s.problem_id);
-        setCompleted(solved);
+        setCompleted(
+          data.filter((p: any) => p.passed).map((p: any) => p.problem_id)
+        );
       }
     };
 
     fetchProblems();
-    fetchSubmissions();
-  }, []);
+    fetchProgress();
+  }, [userId]);
 
-  // Initialize Pyodide
   useEffect(() => {
     const initPyodide = async () => {
       try {
@@ -85,37 +86,20 @@ const Practice = () => {
     initPyodide();
   }, []);
 
-  // Run code and save submission
-  const runCode = async (problem: Problem) => {
-    if (!pyodide) return;
-    const code = codeMap[problem.id];
+  const runCode = async (code: string, problem: Problem) => {
+    if (!pyodide || !userId) return;
     try {
       let allPassed = true;
       let resultLogs: string[] = [];
 
       for (const tc of problem.test_cases) {
-        // Reset Python globals for each test
-        pyodide.runPython("globals().clear()");
-
-        // Load user code
         pyodide.runPython(code);
-
-        // Extract function name safely
-        const fnMatch = code.match(/def\s+(\w+)\s*\(/);
-        const fnName = fnMatch ? fnMatch[1] : null;
-
-        if (!fnName) {
-          resultLogs.push("❌ Could not detect function name.");
-          allPassed = false;
-          break;
-        }
-
-        // Call the function with test input
+        let fnName = problem.starter_code.split("(")[0].replace("def ", "").trim();
         let pyResult = pyodide.runPython(
           `${fnName}(*${JSON.stringify(tc.input)})`
         );
-
         let passed = pyResult === tc.expected_output;
+
         resultLogs.push(
           `Input: ${tc.input} | Expected: ${tc.expected_output} | Got: ${pyResult} | ${
             passed ? "✅" : "❌"
@@ -125,31 +109,29 @@ const Practice = () => {
         if (!passed) allPassed = false;
       }
 
-      // Update UI
       setOutputs((prev) => ({ ...prev, [problem.id]: resultLogs.join("\n") }));
 
-      // Save submission to Supabase
+      // save submission
       await supabase.from("practice_submissions").insert({
-        user_id: "demo-user", // TODO: replace with auth user later
+        user_id: userId,
         problem_id: problem.id,
         code,
         result: resultLogs,
         passed: allPassed,
       });
 
-      // Update completed if passed
       if (allPassed && !completed.includes(problem.id)) {
         setCompleted((prev) => [...prev, problem.id]);
       }
     } catch (err: any) {
-      setOutputs((prev) => ({
-        ...prev,
-        [problem.id]: `Error: ${err.message}`,
-      }));
+      setOutputs((prev) => ({ ...prev, [problem.id]: `Error: ${err.message}` }));
     }
   };
 
   if (loading) return <p className="text-center">⏳ Loading Python runtime...</p>;
+
+  if (!userId)
+    return <p className="text-center">🔑 Please sign in to track progress.</p>;
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -165,23 +147,19 @@ const Practice = () => {
           <Editor
             height="200px"
             defaultLanguage="python"
-            value={codeMap[problem.id]}
-            onChange={(value) =>
-              setCodeMap((prev) => ({ ...prev, [problem.id]: value || "" }))
-            }
+            defaultValue={problem.starter_code}
+            onChange={(value) => (problem.starter_code = value || "")}
           />
 
           <button
             className="mt-3 px-4 py-2 bg-primary text-white rounded"
-            onClick={() => runCode(problem)}
+            onClick={() => runCode(problem.starter_code, problem)}
           >
             Run Code
           </button>
 
           {completed.includes(problem.id) && (
-            <span className="ml-3 text-green-600 font-semibold">
-              ✔ Completed
-            </span>
+            <span className="ml-3 text-green-600 font-semibold">✔ Completed</span>
           )}
 
           <div className="mt-2">
