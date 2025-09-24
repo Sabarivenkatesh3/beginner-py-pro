@@ -30,13 +30,16 @@ const Practice = () => {
 
   // Load Pyodide once
   useEffect(() => {
-    const initPyodide = async () => {
-      const pyodideInstance = await loadPyodide();
-      setPyodide(pyodideInstance);
-      setLoading(false);
-    };
-    initPyodide();
+  const initPyodide = async () => {
+    const pyodideInstance = await loadPyodide({
+      indexURL: "https://cdn.jsdelivr.net/pyodide/v0.26.0/full/",
+    });
+    setPyodide(pyodideInstance);
+    setLoading(false);
+  };
+  initPyodide();
   }, []);
+
 
   const runCode = async (code: string, id: number) => {
     if (!pyodide) return;
