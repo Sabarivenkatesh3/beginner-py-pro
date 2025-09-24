@@ -1,20 +1,25 @@
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { createClient } from "@supabase/supabase-js";
 
-type Lesson = {
+const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL!,
+  import.meta.env.VITE_SUPABASE_ANON_KEY!
+);
+
+interface Lesson {
   id: string;
   title: string;
   description: string;
   content: string;
   code_example: string;
-  difficulty: string;
   order_number: number;
-};
+  difficulty: string;
+}
 
 const Lessons = () => {
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [completed, setCompleted] = useState<string[]>([]);
 
   useEffect(() => {
     const fetchLessons = async () => {
@@ -23,41 +28,56 @@ const Lessons = () => {
         .select("*")
         .order("order_number", { ascending: true });
 
-      if (error) {
-        console.error("Error fetching lessons:", error);
-        setError(error.message);
-      } else {
-        setLessons(data || []);
-      }
+      if (!error && data) setLessons(data);
       setLoading(false);
     };
 
+    const fetchProgress = async () => {
+      const { data } = await supabase
+        .from("progress")
+        .select("item_id")
+        .eq("type", "lesson");
+      if (data) setCompleted(data.map((p: any) => p.item_id));
+    };
+
     fetchLessons();
+    fetchProgress();
   }, []);
 
-  if (loading) return <p className="p-4">Loading lessons...</p>;
-  if (error) return <p className="p-4 text-red-500">Error: {error}</p>;
-  if (lessons.length === 0) return <p className="p-4">No lessons available yet.</p>;
+  const markCompleted = async (lessonId: string) => {
+    const { error } = await supabase.from("progress").insert({
+      user_id: "demo-user", // replace with auth user id later
+      type: "lesson",
+      item_id: lessonId,
+      completed_at: new Date().toISOString(),
+    });
+
+    if (!error) setCompleted((prev) => [...prev, lessonId]);
+  };
+
+  if (loading) return <p className="text-center">Loading lessons...</p>;
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="container mx-auto px-4 py-8">
-        <h1 className="text-3xl font-bold text-center mb-8">Python Lessons</h1>
-        <div className="space-y-6">
-          {lessons.map((lesson) => (
-            <div
-              key={lesson.id}
-              className="p-4 rounded-xl shadow bg-white space-y-2"
+    <div className="container mx-auto px-4 py-8">
+      <h1 className="text-3xl font-bold mb-6">Lessons</h1>
+      {lessons.map((lesson) => (
+        <div key={lesson.id} className="mb-8 p-6 border rounded-lg shadow">
+          <h2 className="text-xl font-semibold mb-2">{lesson.title}</h2>
+          <p className="mb-3">{lesson.description}</p>
+          <pre className="bg-gray-100 p-2 rounded">{lesson.code_example}</pre>
+
+          {completed.includes(lesson.id) ? (
+            <span className="text-green-600 font-semibold">✔ Completed</span>
+          ) : (
+            <button
+              className="mt-3 px-4 py-2 bg-primary text-white rounded"
+              onClick={() => markCompleted(lesson.id)}
             >
-              <h2 className="text-xl font-semibold">{lesson.title}</h2>
-              <p className="text-gray-600">{lesson.description}</p>
-              <pre className="bg-gray-100 p-3 rounded text-sm overflow-x-auto">
-                {lesson.code_example}
-              </pre>
-            </div>
-          ))}
+              Mark as Completed
+            </button>
+          )}
         </div>
-      </div>
+      ))}
     </div>
   );
 };
