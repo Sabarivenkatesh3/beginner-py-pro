@@ -3,6 +3,7 @@ import Editor from "@monaco-editor/react";
 import { loadPyodide, PyodideInterface } from "pyodide";
 import { createClient } from "@supabase/supabase-js";
 
+// Supabase client
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL!,
   import.meta.env.VITE_SUPABASE_ANON_KEY!
@@ -23,7 +24,9 @@ const Practice = () => {
   const [outputs, setOutputs] = useState<{ [key: string]: string }>({});
   const [problems, setProblems] = useState<Problem[]>([]);
   const [completed, setCompleted] = useState<string[]>([]);
+  const [codeMap, setCodeMap] = useState<{ [key: string]: string }>({});
 
+  // Load practice problems
   useEffect(() => {
     const fetchProblems = async () => {
       const { data, error } = await supabase
@@ -32,27 +35,40 @@ const Practice = () => {
         .order("order_number", { ascending: true });
 
       if (!error && data) {
-        setProblems(
-          data.map((p: any) => ({
-            ...p,
-            test_cases: JSON.parse(p.test_cases),
-          }))
-        );
+        const mapped = data.map((p: any) => ({
+          ...p,
+          test_cases: JSON.parse(p.test_cases),
+        }));
+        setProblems(mapped);
+
+        // Initialize codeMap with starter code
+        const initialCode: { [key: string]: string } = {};
+        mapped.forEach((p: Problem) => {
+          initialCode[p.id] = p.starter_code;
+        });
+        setCodeMap(initialCode);
       }
     };
 
-    const fetchProgress = async () => {
+    const fetchSubmissions = async () => {
       const { data } = await supabase
-        .from("progress")
-        .select("item_id")
-        .eq("type", "problem");
-      if (data) setCompleted(data.map((p: any) => p.item_id));
+        .from("practice_submissions")
+        .select("problem_id, passed")
+        .eq("user_id", "demo-user"); // TODO: replace with real auth user_id
+
+      if (data) {
+        const solved = data
+          .filter((s: any) => s.passed)
+          .map((s: any) => s.problem_id);
+        setCompleted(solved);
+      }
     };
 
     fetchProblems();
-    fetchProgress();
+    fetchSubmissions();
   }, []);
 
+  // Initialize Pyodide
   useEffect(() => {
     const initPyodide = async () => {
       try {
@@ -69,18 +85,37 @@ const Practice = () => {
     initPyodide();
   }, []);
 
-  const runCode = async (code: string, problem: Problem) => {
+  // Run code and save submission
+  const runCode = async (problem: Problem) => {
     if (!pyodide) return;
+    const code = codeMap[problem.id];
     try {
       let allPassed = true;
       let resultLogs: string[] = [];
 
       for (const tc of problem.test_cases) {
-        pyodide.runPython(code);
-        let fnName = problem.starter_code.split("(")[0].replace("def ", "").trim();
-        let pyResult = pyodide.runPython(`${fnName}(*${JSON.stringify(tc.input)})`);
-        let passed = pyResult === tc.expected_output;
+        // Reset Python globals for each test
+        pyodide.runPython("globals().clear()");
 
+        // Load user code
+        pyodide.runPython(code);
+
+        // Extract function name safely
+        const fnMatch = code.match(/def\s+(\w+)\s*\(/);
+        const fnName = fnMatch ? fnMatch[1] : null;
+
+        if (!fnName) {
+          resultLogs.push("❌ Could not detect function name.");
+          allPassed = false;
+          break;
+        }
+
+        // Call the function with test input
+        let pyResult = pyodide.runPython(
+          `${fnName}(*${JSON.stringify(tc.input)})`
+        );
+
+        let passed = pyResult === tc.expected_output;
         resultLogs.push(
           `Input: ${tc.input} | Expected: ${tc.expected_output} | Got: ${pyResult} | ${
             passed ? "✅" : "❌"
@@ -90,19 +125,27 @@ const Practice = () => {
         if (!passed) allPassed = false;
       }
 
+      // Update UI
       setOutputs((prev) => ({ ...prev, [problem.id]: resultLogs.join("\n") }));
 
+      // Save submission to Supabase
+      await supabase.from("practice_submissions").insert({
+        user_id: "demo-user", // TODO: replace with auth user later
+        problem_id: problem.id,
+        code,
+        result: resultLogs,
+        passed: allPassed,
+      });
+
+      // Update completed if passed
       if (allPassed && !completed.includes(problem.id)) {
-        await supabase.from("progress").insert({
-          user_id: "demo-user", // replace with auth user later
-          type: "problem",
-          item_id: problem.id,
-          completed_at: new Date().toISOString(),
-        });
         setCompleted((prev) => [...prev, problem.id]);
       }
     } catch (err: any) {
-      setOutputs((prev) => ({ ...prev, [problem.id]: `Error: ${err.message}` }));
+      setOutputs((prev) => ({
+        ...prev,
+        [problem.id]: `Error: ${err.message}`,
+      }));
     }
   };
 
@@ -110,7 +153,9 @@ const Practice = () => {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold text-center mb-8">Python Practice Problems</h1>
+      <h1 className="text-3xl font-bold text-center mb-8">
+        Python Practice Problems
+      </h1>
 
       {problems.map((problem) => (
         <div key={problem.id} className="mb-12 p-6 border rounded-lg shadow">
@@ -120,19 +165,23 @@ const Practice = () => {
           <Editor
             height="200px"
             defaultLanguage="python"
-            defaultValue={problem.starter_code}
-            onChange={(value) => (problem.starter_code = value || "")}
+            value={codeMap[problem.id]}
+            onChange={(value) =>
+              setCodeMap((prev) => ({ ...prev, [problem.id]: value || "" }))
+            }
           />
 
           <button
             className="mt-3 px-4 py-2 bg-primary text-white rounded"
-            onClick={() => runCode(problem.starter_code, problem)}
+            onClick={() => runCode(problem)}
           >
             Run Code
           </button>
 
           {completed.includes(problem.id) && (
-            <span className="ml-3 text-green-600 font-semibold">✔ Completed</span>
+            <span className="ml-3 text-green-600 font-semibold">
+              ✔ Completed
+            </span>
           )}
 
           <div className="mt-2">

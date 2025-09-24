@@ -34,10 +34,16 @@ const Lessons = () => {
 
     const fetchProgress = async () => {
       const { data } = await supabase
-        .from("progress")
-        .select("item_id")
-        .eq("type", "lesson");
-      if (data) setCompleted(data.map((p: any) => p.item_id));
+        .from("lesson_progress")
+        .select("lesson_id, completed")
+        .eq("user_id", "demo-user"); // TODO: replace with auth user id
+
+      if (data) {
+        const completedLessons = data
+          .filter((p: any) => p.completed)
+          .map((p: any) => p.lesson_id);
+        setCompleted(completedLessons);
+      }
     };
 
     fetchLessons();
@@ -45,10 +51,10 @@ const Lessons = () => {
   }, []);
 
   const markCompleted = async (lessonId: string) => {
-    const { error } = await supabase.from("progress").insert({
-      user_id: "demo-user", // replace with auth user id later
-      type: "lesson",
-      item_id: lessonId,
+    const { error } = await supabase.from("lesson_progress").upsert({
+      user_id: "demo-user", // TODO: replace with auth user
+      lesson_id: lessonId,
+      completed: true,
       completed_at: new Date().toISOString(),
     });
 
