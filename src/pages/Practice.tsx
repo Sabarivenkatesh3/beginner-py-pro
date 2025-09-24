@@ -1,123 +1,89 @@
-import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { useState, useEffect } from "react";
 import Editor from "@monaco-editor/react";
-import { loadPyodide } from "pyodide";
-
-type Problem = {
-  id: string;
-  title: string;
-  description: string;
-  starter_code: string;
-  difficulty: string;
-  topics: string[];
-  order_number: number;
-};
+import { loadPyodide, PyodideInterface } from "pyodide";
 
 const Practice = () => {
-  const [problems, setProblems] = useState<Problem[]>([]);
+  const [pyodide, setPyodide] = useState<PyodideInterface | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [pyodide, setPyodide] = useState<any>(null);
-  const [outputs, setOutputs] = useState<Record<string, string>>({});
+  const [outputs, setOutputs] = useState<{ [key: number]: string }>({});
 
-  // Load problems
-  useEffect(() => {
-    const fetchProblems = async () => {
-      const { data, error } = await supabase
-        .from("practice_problems")
-        .select("*")
-        .order("order_number", { ascending: true });
-
-      if (error) {
-        console.error("Error fetching practice problems:", error);
-        setError(error.message);
-      } else {
-        setProblems(data || []);
-      }
-      setLoading(false);
-    };
-
-    fetchProblems();
-  }, []);
+  const problems = [
+    {
+      id: 1,
+      title: "Hello World",
+      description: "Write a program that prints 'Hello, World!' to the console.",
+      starterCode: `def hello_world():\n    # Write your code here\n    pass`,
+    },
+    {
+      id: 2,
+      title: "Simple Calculator",
+      description: "Create a function that adds two numbers together.",
+      starterCode: `def add_numbers(a, b):\n    # Return the sum of a and b\n    pass`,
+    },
+    {
+      id: 3,
+      title: "Even or Odd",
+      description: "Write a function that determines if a number is even or odd.",
+      starterCode: `def is_even(number):\n    # Return True if even, False if odd\n    pass`,
+    },
+  ];
 
   // Load Pyodide once
   useEffect(() => {
     const initPyodide = async () => {
-      const py = await loadPyodide();
-      setPyodide(py);
+      const pyodideInstance = await loadPyodide();
+      setPyodide(pyodideInstance);
+      setLoading(false);
     };
     initPyodide();
   }, []);
 
-  const runCode = async (id: string, code: string) => {
-    if (!pyodide) {
-      setOutputs((prev) => ({
-        ...prev,
-        [id]: "⏳ Python runtime still loading...",
-      }));
-      return;
-    }
-
+  const runCode = async (code: string, id: number) => {
+    if (!pyodide) return;
     try {
-      const result = pyodide.runPython(code);
-      setOutputs((prev) => ({ ...prev, [id]: String(result) }));
+      let result = await pyodide.runPythonAsync(code);
+      setOutputs((prev) => ({ ...prev, [id]: String(result ?? "") }));
     } catch (err: any) {
       setOutputs((prev) => ({ ...prev, [id]: `Error: ${err.message}` }));
     }
   };
 
-  if (loading) return <p className="p-4">Loading practice problems...</p>;
-  if (error) return <p className="p-4 text-red-500">Error: {error}</p>;
-  if (problems.length === 0) return <p className="p-4">No problems available yet.</p>;
-
   return (
     <div className="min-h-screen bg-background">
       <div className="container mx-auto px-4 py-8">
-        <h1 className="text-3xl font-bold text-center mb-8">
-          Python Practice Problems
-        </h1>
-        <div className="space-y-10">
-          {problems.map((problem) => (
-            <div
-              key={problem.id}
-              className="p-6 rounded-xl shadow bg-white space-y-4"
-            >
-              <h2 className="text-xl font-semibold">{problem.title}</h2>
-              <p className="text-gray-600">{problem.description}</p>
+        <h1 className="text-3xl font-bold text-center mb-8">Python Practice Problems</h1>
+
+        {loading ? (
+          <p className="text-center">⏳ Loading Python runtime...</p>
+        ) : (
+          problems.map((problem) => (
+            <div key={problem.id} className="mb-12 p-6 border rounded-lg shadow">
+              <h2 className="text-xl font-semibold mb-2">{problem.title}</h2>
+              <p className="mb-4">{problem.description}</p>
 
               <Editor
                 height="200px"
                 defaultLanguage="python"
-                defaultValue={problem.starter_code}
-                theme="vs-dark"
-                onChange={(value) => {
-                  setOutputs((prev) => ({ ...prev, [problem.id]: value || "" }));
-                }}
+                defaultValue={problem.starterCode}
+                onChange={(value) => (problem.starterCode = value || "")}
               />
 
               <button
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg shadow hover:bg-blue-700"
-                onClick={() =>
-                  runCode(problem.id, outputs[problem.id] || problem.starter_code)
-                }
+                className="mt-3 px-4 py-2 bg-primary text-white rounded"
+                onClick={() => runCode(problem.starterCode, problem.id)}
               >
                 Run Code
               </button>
 
-              <div className="bg-gray-100 p-3 rounded text-sm">
+              <div className="mt-2">
                 <strong>Output:</strong>
-                <pre>{outputs[problem.id] || "No output yet."}</pre>
+                <pre className="bg-gray-100 p-2 rounded">
+                  {outputs[problem.id] || "No output yet."}
+                </pre>
               </div>
-
-              <p className="text-sm text-gray-500">
-                Difficulty: {problem.difficulty}
-              </p>
-              <p className="text-sm text-gray-500">
-                Topics: {problem.topics.join(", ")}
-              </p>
             </div>
-          ))}
-        </div>
+          ))
+        )}
       </div>
     </div>
   );
