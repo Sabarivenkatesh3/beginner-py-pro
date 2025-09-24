@@ -33,7 +33,7 @@ const Practice = () => {
     const initPyodide = async () => {
       try {
         const pyodideInstance = await loadPyodide({
-          indexURL: "https://cdn.jsdelivr.net/pyodide/v0.26.2/full/",
+          indexURL: "https://cdn.jsdelivr.net/pyodide/v0.28.3/full/",
         });
 
         // Setup for capturing stdout and errors
