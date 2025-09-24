@@ -5,31 +5,31 @@ import { loadPyodide, PyodideInterface } from "pyodide";
 const Practice = () => {
   const [pyodide, setPyodide] = useState<PyodideInterface | null>(null);
   const [loading, setLoading] = useState(true);
-  const [outputs, setOutputs] = useState<{ [key: number]: string }>({});
   const [codes, setCodes] = useState<{ [key: number]: string }>({});
+  const [outputs, setOutputs] = useState<{ [key: number]: string }>({});
 
   const problems = [
     {
       id: 1,
       title: "Hello World",
       description: "Write a program that prints 'Hello, World!' to the console.",
-      starterCode: `def hello_world():\n    print("Hello, World!")\n\nhello_world()`,
+      starterCode: `print("Hello, World!")`,
     },
     {
       id: 2,
       title: "Simple Calculator",
       description: "Create a function that adds two numbers together.",
-      starterCode: `def add_numbers(a, b):\n    return a + b\n\nprint(add_numbers(5, 3))`,
+      starterCode: `def add_numbers(a, b):\n    return a + b\n\nprint(add_numbers(2, 3))`,
     },
     {
       id: 3,
       title: "Even or Odd",
       description: "Write a function that determines if a number is even or odd.",
-      starterCode: `def is_even(number):\n    if number % 2 == 0:\n        return True\n    return False\n\nprint(is_even(4))`,
+      starterCode: `def is_even(number):\n    return number % 2 == 0\n\nprint(is_even(4))`,
     },
   ];
 
-  // Initialize Pyodide once
+  // Load Pyodide and initialize codes
   useEffect(() => {
     const initPyodide = async () => {
       try {
@@ -38,7 +38,6 @@ const Practice = () => {
         });
         setPyodide(pyodideInstance);
 
-        // Initialize codes with starterCode
         const initialCodes = problems.reduce(
           (acc, p) => ({ ...acc, [p.id]: p.starterCode }),
           {}
@@ -53,49 +52,42 @@ const Practice = () => {
     initPyodide();
   }, []);
 
+  // Run Python code
   const runCode = async (code: string, id: number) => {
     if (!pyodide) return;
     try {
       let output = "";
-
-      // Capture stdout & stderr
       pyodide.setStdout({
-        batched: (msg) => {
-          output += msg + "\n";
-        },
+        batched: (msg) => (output += msg + "\n"),
       });
       pyodide.setStderr({
-        batched: (msg) => {
-          output += "Error: " + msg + "\n";
-        },
+        batched: (msg) => (output += "Error: " + msg + "\n"),
       });
 
       await pyodide.runPythonAsync(code);
 
       setOutputs((prev) => ({
         ...prev,
-        [id]: output || "✅ Code ran successfully (no output)",
+        [id]: output.trim() || "✅ Code ran successfully (no output)",
       }));
     } catch (err: any) {
-      setOutputs((prev) => ({ ...prev, [id]: `Error: ${err.message}` }));
+      setOutputs((prev) => ({
+        ...prev,
+        [id]: `Error: ${err.message}`,
+      }));
     }
   };
 
   return (
     <div className="min-h-screen bg-background">
       <div className="container mx-auto px-4 py-8">
-        <h1 className="text-3xl font-bold text-center mb-8">
-          Python Practice Problems
-        </h1>
+        <h1 className="text-3xl font-bold text-center mb-8">Python Practice Problems</h1>
 
         {loading ? (
           <p className="text-center">⏳ Loading Python runtime...</p>
         ) : (
           problems.map((problem) => (
-            <div
-              key={problem.id}
-              className="mb-12 p-6 border rounded-lg shadow"
-            >
+            <div key={problem.id} className="mb-12 p-6 border rounded-lg shadow">
               <h2 className="text-xl font-semibold mb-2">{problem.title}</h2>
               <p className="mb-4">{problem.description}</p>
 
