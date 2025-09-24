@@ -28,28 +28,45 @@ const Practice = () => {
     },
   ];
 
-  // Load Pyodide once
   useEffect(() => {
   const initPyodide = async () => {
-    const pyodideInstance = await loadPyodide({
-      indexURL: "https://cdn.jsdelivr.net/pyodide/v0.26.0/full/",
-    });
-    setPyodide(pyodideInstance);
-    setLoading(false);
+    try {
+      const pyodideInstance = await loadPyodide({
+        indexURL: "https://cdn.jsdelivr.net/pyodide/v0.26.2/full/",
+      });
+      setPyodide(pyodideInstance);
+    } catch (error) {
+      console.error("Failed to load Pyodide:", error);
+    } finally {
+      setLoading(false);
+    }
   };
   initPyodide();
   }, []);
 
 
+
   const runCode = async (code: string, id: number) => {
-    if (!pyodide) return;
-    try {
-      let result = await pyodide.runPythonAsync(code);
-      setOutputs((prev) => ({ ...prev, [id]: String(result ?? "") }));
-    } catch (err: any) {
-      setOutputs((prev) => ({ ...prev, [id]: `Error: ${err.message}` }));
-    }
+  if (!pyodide) return;
+  try {
+    let output = "";
+    pyodide.setStdout({
+      batched: (msg) => {
+        output += msg + "\n";
+      },
+    });
+    pyodide.setStderr({
+      batched: (msg) => {
+        output += "Error: " + msg + "\n";
+      },
+    });
+    await pyodide.runPythonAsync(code);
+    setOutputs((prev) => ({ ...prev, [id]: output || "✅ Code ran successfully (no output)" }));
+  } catch (err: any) {
+    setOutputs((prev) => ({ ...prev, [id]: `Error: ${err.message}` }));
+  }
   };
+
 
   return (
     <div className="min-h-screen bg-background">
