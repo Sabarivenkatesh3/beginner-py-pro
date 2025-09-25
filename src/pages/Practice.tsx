@@ -16,7 +16,6 @@ interface PracticeProblem {
   title: string;
   description: string;
   starter_code: string;
-  solution: string;
   test_cases: { input: any; expected: any }[];
   difficulty: string;
   topics: string[];
@@ -43,16 +42,26 @@ const Practice = () => {
     const fetchProblems = async () => {
       const { data, error } = await supabase
         .from("practice_problems")
-        .select("*")
+        .select("id, title, description, starter_code, test_cases, difficulty, topics, order_number")
         .order("order_number", { ascending: true });
 
       if (error) {
         console.error("Error fetching problems:", error);
       } else {
-        setProblems(data || []);
-        if (data && data.length > 0 && !selectedProblem) {
-          setSelectedProblem(data[0]);
-          setCode(data[0].starter_code || "");
+        const formattedProblems: PracticeProblem[] = (data || []).map(p => ({
+          id: p.id,
+          title: p.title,
+          description: p.description,
+          starter_code: p.starter_code || '',
+          test_cases: typeof p.test_cases === 'string' ? JSON.parse(p.test_cases) : p.test_cases as { input: any; expected: any }[],
+          difficulty: p.difficulty || 'easy',
+          topics: p.topics || [],
+          order_number: p.order_number
+        }));
+        setProblems(formattedProblems);
+        if (formattedProblems.length > 0 && !selectedProblem) {
+          setSelectedProblem(formattedProblems[0]);
+          setCode(formattedProblems[0].starter_code || "");
         }
       }
     };
@@ -221,6 +230,25 @@ sys.stdout = StringIO()
 
       if (allPassed) {
         toast.success("All tests passed! Great job! 🎉");
+        
+        // Fetch and display solution after successful completion
+        try {
+          const { data: solutionData } = await supabase
+            .from('practice_solutions')
+            .select('solution, explanation')
+            .eq('problem_id', selectedProblem.id)
+            .single();
+            
+          if (solutionData) {
+            setOutput(prevOutput => 
+              prevOutput + "\n\n🎯 SOLUTION UNLOCKED:\n" + 
+              solutionData.solution + 
+              (solutionData.explanation ? "\n\nExplanation: " + solutionData.explanation : "")
+            );
+          }
+        } catch (error) {
+          console.log('Solution not available yet or access denied');
+        }
       } else if (adaptiveContent && AdaptiveLearningEngine.shouldShowHint(attempts, adaptiveContent)) {
         toast.info("Need help? Try asking the AI tutor for a hint!");
       }

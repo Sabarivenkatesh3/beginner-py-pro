@@ -240,7 +240,7 @@ const AITutor: React.FC<AITutorProps> = ({ context, onClose }) => {
         .from('chatbot_conversations')
         .upsert({
           user_id: user.id,
-          messages: conversationMessages,
+          messages: JSON.stringify(conversationMessages),
           updated_at: new Date().toISOString()
         });
     } catch (error) {

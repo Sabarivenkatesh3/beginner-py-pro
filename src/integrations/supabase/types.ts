@@ -178,6 +178,41 @@ export type Database = {
         }
         Relationships: []
       }
+      practice_solutions: {
+        Row: {
+          created_at: string
+          explanation: string | null
+          id: string
+          problem_id: string
+          solution: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          explanation?: string | null
+          id?: string
+          problem_id: string
+          solution: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          explanation?: string | null
+          id?: string
+          problem_id?: string
+          solution?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "practice_solutions_problem_id_fkey"
+            columns: ["problem_id"]
+            isOneToOne: false
+            referencedRelation: "practice_problems"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       practice_submissions: {
         Row: {
           code: string
@@ -221,6 +256,7 @@ export type Database = {
           created_at: string
           display_name: string | null
           id: string
+          skill_level: number
           updated_at: string
           user_id: string
         }
@@ -228,6 +264,7 @@ export type Database = {
           created_at?: string
           display_name?: string | null
           id?: string
+          skill_level?: number
           updated_at?: string
           user_id: string
         }
@@ -235,6 +272,7 @@ export type Database = {
           created_at?: string
           display_name?: string | null
           id?: string
+          skill_level?: number
           updated_at?: string
           user_id?: string
         }
